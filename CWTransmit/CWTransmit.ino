@@ -11,7 +11,6 @@ extern "C" {
 #define WIFI_CHANNEL 4 // The quietest channel I could find
 
 //MAC ADDRESS OF THE DEVICE YOU ARE SENDING TO
-//byte remoteMac[] = {0x5e, 0xcf, 0x7f, 0x06, 0x72, 0x6a};
 byte remoteMac[] = {0x36, 0x33, 0x33, 0x33, 0x33, 0x33};
 const byte dataLength=2;
 ADC_MODE(ADC_VCC);  // set to measure internal vcc
@@ -19,7 +18,7 @@ int battery_voltage;
 
 void setup()
 {
-  Serial.begin(115200);
+  Serial.begin(115200);  // enabling the serial port does not cause extra current drain
   WiFi.mode(WIFI_STA);
   WiFi.begin();
   WiFi.disconnect();
@@ -31,16 +30,17 @@ void setup()
   esp_now_set_self_role(ESP_NOW_ROLE_CONTROLLER);
   esp_now_add_peer(remoteMac, ESP_NOW_ROLE_SLAVE, WIFI_CHANNEL, NULL, 0);
   battery_voltage = ESP.getVcc();
-  esp_now_send(remoteMac, (u8*)&battery_voltage, dataLength);
+  battery_voltage = ESP.getVcc();  // may need to read twice to be reliable???
+  esp_now_send(remoteMac, (u8*)&battery_voltage, dataLength); // better to send local mac!
   delay(10); // required for send to complete
   system_deep_sleep_instant(0);
-  
-  //ESP.deepSleep(0);  // shut down, save power
-  //delay(100); // Need this to make sleep work???? 
+
+  //ESP.deepSleep(0);  // It is not known if these last two lines are needed!!
+  //delay(100);
 }  
 
 void loop()
 {
- 
+  ESP.deepSleep(0);  // It is not known if these last two lines are needed!!
 }
 

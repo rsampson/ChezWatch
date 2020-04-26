@@ -21,8 +21,8 @@ extern "C" {
 // fix mac adder so parts can be easily interchanged
 void initVariant() {
   uint8_t mac[] = {0x36, 0x33, 0x33, 0x33, 0x33, 0x33};
+  WiFi.mode(WIFI_AP);
   bool a = wifi_set_macaddr(SOFTAP_IF, &mac[0]);
-  //wifi_set_macaddr(STATION_IF, mac);
 }
 
 WiFiClient client;
@@ -32,25 +32,24 @@ volatile int battery_voltage;
 void setup()
 {
   Serial.begin(115200);
-  delay(100); // may need to get sign on OK
+  //delay(100); // may need to get sign on OK
   Serial.println("\r\nESP_Now MASTER CONTROLLER\r\n");
   pinMode(BLUELED, OUTPUT);
   initVariant();
-  WiFi.mode(WIFI_AP);
+
   // This is the mac address of the Slave in AP Mode
   Serial.print("AP MAC: "); Serial.println(WiFi.softAPmacAddress());
   WiFi.disconnect();
- 
   esp_now_init();
   esp_now_set_self_role(ESP_NOW_ROLE_COMBO);
-    
   esp_now_register_recv_cb([](uint8_t *mac, uint8_t *data, uint8_t len)                     
   {
-      Serial.printf("Got Something length =\t%i", len);
+      haveReading = true;
       // adc data is 10 bit little endian
       battery_voltage =(data[0] + (((data[1] & 3) << 8)));
-      Serial.printf(" with value =\t%i\n", battery_voltage);
-      haveReading = true;
+      //Serial.printf("Got Something length =\t%i", len);
+      //Serial.printf(" with value =\t%i\n", battery_voltage);
+
     // only needed if you want to talk back  
 //      if (!esp_now_is_peer_exist(macaddr))
 //      {
@@ -78,7 +77,7 @@ void loop()
          yield();
          if (i > 20) {
             initVariant();
-            WiFi.mode(WIFI_AP);
+            WiFi.mode(WIFI_STA);
             WiFi.disconnect();
             ESP.restart();
          }
@@ -93,10 +92,11 @@ void loop()
       //delay(200);
       // need to set mac again so it will recover with set mac
       initVariant();
-      WiFi.mode(WIFI_AP);
+      WiFi.mode(WIFI_STA);
       // check again to make sure mac is set correctly
       Serial.print("AP MAC: "); Serial.println(WiFi.softAPmacAddress());
       ESP.restart(); // re-enable ESP-NOW     
   }
+  delay(100);
 }
 
