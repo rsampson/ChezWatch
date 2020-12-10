@@ -1,6 +1,9 @@
 password.h
 *.d
 
+#misc
+*.tmp
+
 # Object files
 *.o
 *.ko

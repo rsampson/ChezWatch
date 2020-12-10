@@ -29,20 +29,23 @@ extern "C" {
 void initVariant() {
   uint8_t mac[] = {0x36, 0x33, 0x33, 0x33, 0x33, 0x33};
   //uint8_t mac[] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
+  WiFi.softAP("chezwatch"); // set ssid indentifier
   WiFi.mode(WIFI_AP);
   bool a = wifi_set_macaddr(SOFTAP_IF, &mac[0]);
 }
 
 
-// create 3 note alarm that is unique to each sensor
+// create psuedo morse code alarm that is unique to each sensor
 void alarm(int mac){   // audible alarm on gpio 15
-  tone(15, (mac % 3) * 100, 300);
-  delay(400);
-  tone(15, (mac % 5) * 100, 300);
-  delay(400);
-  tone(15, (mac % 7) * 100, 300);
-  delay(400);
-  noTone(15);
+  int duration;
+  for(int i = 0; i < 8; i++) {
+    mac & 128 ? duration = 200 : duration = 75;
+    tone(15, 880, duration);
+    delay(duration);
+    noTone(15);
+    delay(75);
+    mac <<= 1;
+  }
 }
   
 WiFiClient client;
@@ -70,7 +73,7 @@ void setup()
   }
 
   if (esp_now_set_self_role(ESP_NOW_ROLE_SLAVE) == 0) {
-    Serial.println("Now I am slave");
+    Serial.println("in esp slave mode");
   } else {
     Serial.println("Error setting role");
   }
@@ -88,7 +91,7 @@ void loop()
 {
   if (haveReading) {
     haveReading = false;
-    WiFi.disconnect();
+    WiFi.disconnect(); // disconnect from esp now mode
     WiFi.mode(WIFI_STA);
     Serial.print("Connecting to "); Serial.print(ssid);
     WiFi.begin(ssid, password);
