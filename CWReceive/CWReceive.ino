@@ -11,10 +11,10 @@
 #include <ESP8266WiFi.h>
 #include "password.h"   // keep your ssid, password, ThingSpeak channel and key in here in this format:
 /*
-const char* ssid = "xxxx";
-const char* password = "xxxx";
-const char* APIKey = "xxxx";
-#define MYCHANNEL xxxx    
+  const char* ssid = "xxxx";
+  const char* password = "xxxx";
+  const char* APIKey = "xxxx";
+  #define MYCHANNEL xxxx
 */
 
 #include "ThingSpeak.h"
@@ -36,22 +36,23 @@ void initVariant() {
 
 
 // create psuedo morse code alarm that is unique to each sensor
-void alarm(int mac){   // audible alarm on gpio 15
+void alarm(int mac) {  // audible alarm on D7
   int duration;
-  for(int i = 0; i < 8; i++) {
-    mac & 128 ? duration = 200 : duration = 75;
-    tone(15, 880, duration);
+  for (int i = 0; i < 8; i++) {
+    mac & 128 ? duration = 250 : duration = 60;
+    tone(D7, 880, duration);
     delay(duration);
-    noTone(15);
+    noTone(D7);
     delay(75);
     mac <<= 1;
   }
 }
-  
+
 WiFiClient client;
 volatile boolean haveReading = false;
 volatile int battery_voltage;
 volatile int peer_mac;
+String statusString = "";
 
 void setup()
 {
@@ -59,7 +60,9 @@ void setup()
   Serial.println("\r\nESP_Now running\r\n");
   pinMode( LED_BUILTIN, OUTPUT);
   digitalWrite( LED_BUILTIN, LOW);
+  tone(D7, 880, 200);
   delay(500);
+  noTone(D7);
   digitalWrite( LED_BUILTIN, HIGH);
 
   initVariant();  // required only if not receiving broadcasts
@@ -109,13 +112,37 @@ void loop()
       }
     }
     Serial.print("\nWiFi connected, IP address: "); Serial.println(WiFi.localIP());
-    
+
     alarm(peer_mac);  // generate a unit unique beep on pin gpio 15
 
     // ping ThingSpeak channel and send battery voltage
     ThingSpeak.begin(client);
     ThingSpeak.setField(1, peer_mac); // send up lsb of the mac of the xmiter that signaled
     ThingSpeak.setField(2, ((float)battery_voltage) / 1000);
+    
+    // hacky method of generating status
+    switch(peer_mac) {
+      case 155: 
+        statusString = String("Pir sensor 1");
+        break;
+      case 212: 
+        statusString = String("Garage");
+        break;
+      case 27: 
+        statusString = String("Front gate");
+        break;
+      case 186: 
+        statusString = String("Rear gate");
+        break;
+      case 204: 
+        statusString = String("Front door");
+        break;
+      default: 
+        statusString = String("Unknown");
+        break;
+    }
+    ThingSpeak.setStatus(statusString);
+    
     Serial.print("Battery voltage: "); Serial.println(((float)battery_voltage) / 1000);
     Serial.print("Peer mac: "); Serial.println(peer_mac);
     ThingSpeak.writeFields( MYCHANNEL, APIKey);
