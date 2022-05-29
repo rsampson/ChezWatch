@@ -5,8 +5,7 @@
 // router. Note that the receiver has wall power and does not need to conserve power.
 // ESP Now gateway idea taken from:
 // https://github.com/HarringayMakerSpace/ESP-Now/blob/master/EspNowWatsonRestartingGateway/EspNowWatsonRestartingGateway.ino
-
-#define WIFI_CHANNEL 4  // This seems to be the quietest channel in my area, probably does not matter
+// Uses the excellent voice synthesizer found at: https://github.com/earlephilhower/ESP8266SAM/tree/master/src
 
 #include <ESP8266WiFi.h>
 #include "password.h"   // keep your ssid, password, ThingSpeak channel and key in here in this format:
@@ -16,80 +15,70 @@
 //const char* APIKey = "xxxx";
 //#define MYCHANNEL 1234
 
-
 #include "ThingSpeak.h"
+#include <Arduino.h>
+#include <ESP8266SAM.h>
+#include "AudioOutputI2SNoDAC.h"
 
 extern "C" {
 #include <espnow.h>
 #include "user_interface.h"
 }
 
-// fix mac adder so parts can be easily interchanged
-// not required for broadcast mode
 
-void initVariant() {
-  //uint8_t mac[] = {0x36, 0x33, 0x33, 0x33, 0x33, 0x33};
-  uint8_t mac[] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF}; // this puts it in broadcast mode
-  //WiFi.softAP("narf"); // set ssid indentifier
-  WiFi.mode(WIFI_STA); // was AP
-  bool a = wifi_set_macaddr(SOFTAP_IF, &mac[0]);
-}
-
-
-// create psuedo morse code alarm that is unique to each sensor
-void alarm(int mac) {  // audible alarm on D7
-  int duration;
-  for (int i = 0; i < 8; i++) {
-    mac & 128 ? duration = 250 : duration = 60;
-    tone(D7, 880, duration);
-    delay(duration);
-    noTone(D7);
-    delay(75);
-    mac <<= 1;
-  }
-}
-
+AudioOutputI2SNoDAC *out = NULL;  //voice resources
+ESP8266SAM *sam = new ESP8266SAM;
 WiFiClient client;
 volatile boolean haveReading = false;
-volatile int battery_voltage;
+float battery_voltage;
 volatile int peer_mac;
 String statusString = "";
 
+
+// fix mac adder to broadcast mode so parts can be easily interchanged
+
+void initMac() {
+  WiFi.mode(WIFI_STA); // was AP
+  //uint8_t mac[] = {0x36, 0x33, 0x33, 0x33, 0x33, 0x33};
+  uint8_t mac[] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF}; // this puts it in broadcast mode
+  bool a = wifi_set_macaddr(STATION_IF, &mac[0]);
+}
+
 void setup()
 {
-  Serial.begin(115200);
-  Serial.println("\r\nESP_Now running\r\n");
+  //Serial.begin(115200);
+  //Serial.println("\r\nESP_Now running\r\n");
 
   pinMode( LED_BUILTIN, OUTPUT);
   digitalWrite( LED_BUILTIN, LOW);
-  tone(D7, 880, 200);
   delay(500);
-  noTone(D7);
   digitalWrite( LED_BUILTIN, HIGH);
-
-  initVariant();  // required only if not receiving broadcasts
-
+  
+  out = new AudioOutputI2SNoDAC(); // initialize voice audio
+  out->begin();
+  //sam->Say(out,"hello");
+  
+  initMac();  // required only if not receiving broadcasts  
   // This is the mac address of the Slave in AP Mode
-  Serial.print("AP MAC: "); Serial.println(WiFi.softAPmacAddress());
+  //Serial.print("AP MAC: "); Serial.println(WiFi.softAPmacAddress());
+  
   // Init ESP-NOW
-  if (esp_now_init() != 0) {
-    Serial.println("Error initializing ESP-NOW");
-    return;
-  }
-
-//  if (esp_now_set_self_role(ESP_NOW_ROLE_SLAVE) == 0) {
-//    Serial.println("in esp slave mode");
-//  } else {
-//    Serial.println("Error setting role");
-//  }
-
-  esp_now_register_recv_cb([](uint8_t *mac, uint8_t *data, uint8_t len)
+  if (esp_now_init() == 0)  // register call back if OK
   {
-    haveReading = true;
-    // adc data is 12 bit little endian
-    battery_voltage = (data[0] + (((data[1] & 15) << 8)));
-    peer_mac = mac[5];  // enough mac to identify sensor
-  });
+      esp_now_register_recv_cb([](uint8_t *mac, uint8_t *data, uint8_t len)
+      {
+        haveReading = true;
+        // adc data is 12 bit little endian
+        battery_voltage = (float)(data[0] + (((data[1] & 15) << 8)));
+        battery_voltage = battery_voltage / 1000;
+        peer_mac = mac[5];  // enough mac to identify sensor
+      });
+  }
+  else
+  {
+    //Serial.println("ESP-NOW Init Failed");
+    ESP.restart();
+  }
 }
 
 void loop()
@@ -98,7 +87,7 @@ void loop()
     haveReading = false;
     WiFi.disconnect(); // disconnect from esp now mode
     WiFi.mode(WIFI_STA);
-    Serial.print("Connecting to "); Serial.print(ssid);
+    //Serial.print("Connecting to "); Serial.print(ssid);
     WiFi.begin(ssid, password);
     int i = 0;
     while (WiFi.status() != WL_CONNECTED) {
@@ -107,25 +96,22 @@ void loop()
       delay(20);
       digitalWrite(LED_BUILTIN, HIGH);
       delay(450);
-      Serial.print(".");
-      yield();
+      //Serial.print(".");
       if (i > 20) {
         ESP.restart();
       }
     }
-    Serial.print("\nWiFi connected, IP address: "); Serial.println(WiFi.localIP());
+    //Serial.print("\nWiFi connected, IP address: "); Serial.println(WiFi.localIP());
 
-    alarm(peer_mac);  // generate a unit unique beep on pin gpio 15
-
-    // ping ThingSpeak channel and send battery voltage
+    // contact ThingSpeak channel and send battery voltage
      ThingSpeak.begin(client);
      ThingSpeak.setField(1, peer_mac); // send up lsb of the mac of the xmiter that signaled
-     ThingSpeak.setField(2, ((float)battery_voltage) / 1000);
+     ThingSpeak.setField(2, battery_voltage);
     
-    // hacky method of generating status
+    // generating status
     switch(peer_mac) {
       case 155: 
-        statusString = String("Pir sensor 1");
+        statusString = String("Motion sensor");
         break;
       case 212: 
         statusString = String("Garage");
@@ -143,12 +129,23 @@ void loop()
         statusString = String("Unknown");
         break;
     }
+    
+    sam->Say(out,"alarm");
+    delay(300);
+    char Buf[50];
+    statusString.toCharArray(Buf, 50);
+    sam->Say(out, Buf); // audio anounce of alarm
+    
+    if(battery_voltage < 2.5) {
+      delay(400);
+      sam->Say(out,"Warning! Warning! Low battery!");
+    }
+    
     ThingSpeak.setStatus(statusString + 
-                         String(" Battery Volts= ") + 
-                         String((float)battery_voltage / 1000)
+                         String(" Battery Volts= ") + String(battery_voltage)
                          );
-    Serial.print("Battery voltage: "); Serial.println(((float)battery_voltage) / 1000);
-    Serial.print("Peer mac: "); Serial.println(peer_mac);
+    //Serial.print("Battery voltage: "); Serial.println(((float)battery_voltage) / 1000);
+    //Serial.print("Peer mac: "); Serial.println(peer_mac);
     ThingSpeak.writeFields( MYCHANNEL, APIKey);
 
     ESP.restart(); // re-enable ESP-NOW
