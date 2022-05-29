@@ -10,14 +10,15 @@
 
 #include <ESP8266WiFi.h>
 #include "password.h"   // keep your ssid, password, ThingSpeak channel and key in here in this format:
-/*
-  const char* ssid = "xxxx";
-  const char* password = "xxxx";
-  const char* APIKey = "xxxx";
-  #define MYCHANNEL xxxx
-*/
+
+//const char* ssid = "xxxx";
+//const char* password = "xxxx";
+//const char* APIKey = "xxxx";
+//#define MYCHANNEL 1234
+
 
 #include "ThingSpeak.h"
+
 extern "C" {
 #include <espnow.h>
 #include "user_interface.h"
@@ -27,10 +28,10 @@ extern "C" {
 // not required for broadcast mode
 
 void initVariant() {
-  uint8_t mac[] = {0x36, 0x33, 0x33, 0x33, 0x33, 0x33};
-  //uint8_t mac[] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
-  WiFi.softAP("chezwatch"); // set ssid indentifier
-  WiFi.mode(WIFI_AP);
+  //uint8_t mac[] = {0x36, 0x33, 0x33, 0x33, 0x33, 0x33};
+  uint8_t mac[] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF}; // this puts it in broadcast mode
+  //WiFi.softAP("narf"); // set ssid indentifier
+  WiFi.mode(WIFI_STA); // was AP
   bool a = wifi_set_macaddr(SOFTAP_IF, &mac[0]);
 }
 
@@ -58,6 +59,7 @@ void setup()
 {
   Serial.begin(115200);
   Serial.println("\r\nESP_Now running\r\n");
+
   pinMode( LED_BUILTIN, OUTPUT);
   digitalWrite( LED_BUILTIN, LOW);
   tone(D7, 880, 200);
@@ -75,11 +77,11 @@ void setup()
     return;
   }
 
-  if (esp_now_set_self_role(ESP_NOW_ROLE_SLAVE) == 0) {
-    Serial.println("in esp slave mode");
-  } else {
-    Serial.println("Error setting role");
-  }
+//  if (esp_now_set_self_role(ESP_NOW_ROLE_SLAVE) == 0) {
+//    Serial.println("in esp slave mode");
+//  } else {
+//    Serial.println("Error setting role");
+//  }
 
   esp_now_register_recv_cb([](uint8_t *mac, uint8_t *data, uint8_t len)
   {
@@ -116,9 +118,9 @@ void loop()
     alarm(peer_mac);  // generate a unit unique beep on pin gpio 15
 
     // ping ThingSpeak channel and send battery voltage
-    ThingSpeak.begin(client);
-    ThingSpeak.setField(1, peer_mac); // send up lsb of the mac of the xmiter that signaled
-    ThingSpeak.setField(2, ((float)battery_voltage) / 1000);
+     ThingSpeak.begin(client);
+     ThingSpeak.setField(1, peer_mac); // send up lsb of the mac of the xmiter that signaled
+     ThingSpeak.setField(2, ((float)battery_voltage) / 1000);
     
     // hacky method of generating status
     switch(peer_mac) {
@@ -141,8 +143,10 @@ void loop()
         statusString = String("Unknown");
         break;
     }
-    ThingSpeak.setStatus(statusString);
-    
+    ThingSpeak.setStatus(statusString + 
+                         String(" Battery Volts= ") + 
+                         String((float)battery_voltage / 1000)
+                         );
     Serial.print("Battery voltage: "); Serial.println(((float)battery_voltage) / 1000);
     Serial.print("Peer mac: "); Serial.println(peer_mac);
     ThingSpeak.writeFields( MYCHANNEL, APIKey);
